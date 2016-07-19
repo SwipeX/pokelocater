@@ -30,7 +30,7 @@ def neighbors():
     # 10 before and 10 after
     next = origin.next()
     prev = origin.prev()
-    for i in range(30):
+    for i in range(10):
         walk.append(prev.id())
         walk.append(next.id())
         next = next.next()
