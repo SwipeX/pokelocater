@@ -1,40 +1,41 @@
 # -*- coding: utf-8 -*-
-import requests
+import json
+import os
 import re
 import struct
-import json
-import argparse
-import pokemon_pb2
 import time
-import os
 from collections import OrderedDict
-
-from google.protobuf.internal import encoder
-
 from datetime import datetime
+
+import requests
 from geopy.geocoders import GoogleV3
+from google.protobuf.internal import encoder
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+import pokemon_pb2
+
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 from s2sphere import *
+
 
 def encode(cellid):
     output = []
     encoder._VarintEncoder()(output.append, cellid)
     return ''.join(output)
 
-def getNeighbors():
+
+def neighbors():
     origin = CellId.from_lat_lng(LatLng.from_degrees(FLOAT_LAT, FLOAT_LONG)).parent(15)
     walk = [origin.id()]
     # 10 before and 10 after
     next = origin.next()
     prev = origin.prev()
-    for i in range(10):
+    for i in range(30):
         walk.append(prev.id())
         walk.append(next.id())
         next = next.next()
         prev = prev.prev()
     return walk
-
 
 
 API_URL = 'https://pgorelease.nianticlabs.com/plfe/rpc'
@@ -52,14 +53,18 @@ COORDS_ALTITUDE = 0
 FLOAT_LAT = 0
 FLOAT_LONG = 0
 
+
 def f2i(float):
-  return struct.unpack('<Q', struct.pack('<d', float))[0]
+    return struct.unpack('<Q', struct.pack('<d', float))[0]
+
 
 def f2h(float):
-  return hex(struct.unpack('<Q', struct.pack('<d', float))[0])
+    return hex(struct.unpack('<Q', struct.pack('<d', float))[0])
+
 
 def h2f(hex):
-  return struct.unpack('<d', struct.pack('<Q', int(hex,16)))[0]
+    return struct.unpack('<d', struct.pack('<Q', int(hex, 16)))[0]
+
 
 def set_location(location_name):
     geolocator = GoogleV3()
@@ -69,17 +74,20 @@ def set_location(location_name):
     print('[!] lat/long/alt: {} {} {}'.format(loc.latitude, loc.longitude, loc.altitude))
     set_location_coords(loc.latitude, loc.longitude, loc.altitude)
 
+
 def set_location_coords(lat, long, alt):
     global COORDS_LATITUDE, COORDS_LONGITUDE, COORDS_ALTITUDE
     global FLOAT_LAT, FLOAT_LONG
     FLOAT_LAT = lat
     FLOAT_LONG = long
-    COORDS_LATITUDE = f2i(lat) # 0x4042bd7c00000000 # f2i(lat)
-    COORDS_LONGITUDE = f2i(long) # 0xc05e8aae40000000 #f2i(long)
+    COORDS_LATITUDE = f2i(lat)  # 0x4042bd7c00000000 # f2i(lat)
+    COORDS_LONGITUDE = f2i(long)  # 0xc05e8aae40000000 #f2i(long)
     COORDS_ALTITUDE = f2i(alt)
+
 
 def get_location_coords():
     return (COORDS_LATITUDE, COORDS_LONGITUDE, COORDS_ALTITUDE)
+
 
 def api_req(login_type, api_endpoint, access_token, *mehs, **kw):
     try:
@@ -127,6 +135,7 @@ def api_req(login_type, api_endpoint, access_token, *mehs, **kw):
             print(e)
         return None
 
+
 def get_profile(login_type, access_token, api, useauth, *reqq):
     req = pokemon_pb2.RequestEnvelop()
 
@@ -155,101 +164,108 @@ def get_profile(login_type, access_token, api, useauth, *reqq):
     if len(reqq) >= 5:
         req5.MergeFrom(reqq[4])
 
-    return api_req(login_type, api, access_token, req, useauth = useauth)
+    return api_req(login_type, api, access_token, req, useauth=useauth)
 
-def get_api_endpoint(login_type, access_token, api = API_URL):
+
+def get_api_endpoint(login_type, access_token, api=API_URL):
     p_ret = get_profile(login_type, access_token, api, None)
     try:
         return ('https://%s/rpc' % p_ret.api_url)
     except:
         return None
 
-def login_google(email,passw):
+
+def login_google(email, passw):
     reqses = requests.session()
-    reqses.headers.update({'User-Agent':'Niantic App'})
-    reqses.headers.update({'User-Agent':'Mozilla/5.0 (iPad; CPU OS 8_4 like Mac OS X) AppleWebKit/600.1.4 (KHTML, like Gecko) Mobile/12H143'})
-    first='https://accounts.google.com/o/oauth2/auth?client_id=848232511240-73ri3t7plvk96pj4f85uj8otdat2alem.apps.googleusercontent.com&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob&response_type=code&scope=openid%20email%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email'
-    second='https://accounts.google.com/AccountLoginInfo'
-    third='https://accounts.google.com/signin/challenge/sl/password'
-    last='https://accounts.google.com/o/oauth2/token'
-    r=reqses.get(first)
-    
-    GALX= re.search('<input type="hidden" name="GALX" value=".*">',r.content)
-    gxf= re.search('<input type="hidden" name="gxf" value=".*:.*">',r.content)
-    cont = re.search('<input type="hidden" name="continue" value=".*">',r.content)
-    
-    GALX=re.sub('.*value="','',GALX.group(0))
-    GALX=re.sub('".*','',GALX)
-    
-    gxf=re.sub('.*value="','',gxf.group(0))
-    gxf=re.sub('".*','',gxf)
-    
-    cont=re.sub('.*value="','',cont.group(0))
-    cont=re.sub('".*','',cont)
-    
-    data1={'Page':'PasswordSeparationSignIn',
-            'GALX':GALX,
-            'gxf':gxf,
-            'continue':cont,
-            'ltmpl':'embedded',
-            'scc':'1',
-            'sarp':'1',
-            'oauth':'1',
-            'ProfileInformation':'',
-            '_utf8':'?',
-            'bgresponse':'js_disabled',
-            'Email':email,
-            'signIn':'Next'}
-    r1=reqses.post(second,data=data1)
-    
-    profile= re.search('<input id="profile-information" name="ProfileInformation" type="hidden" value=".*">',r1.content)
-    gxf= re.search('<input type="hidden" name="gxf" value=".*:.*">',r1.content)
-    gxf=re.sub('.*value="','',gxf.group(0))
-    gxf=re.sub('".*','',gxf)
-    
-    profile=re.sub('.*value="','',profile.group(0))
-    profile=re.sub('".*','',profile)
-    data2={'Page':'PasswordSeparationSignIn',
-            'GALX':GALX,
-            'gxf':gxf,
-            'continue':cont,
-            'ltmpl':'embedded',
-            'scc':'1',
-            'sarp':'1',
-            'oauth':'1',
-            'ProfileInformation':profile,
-            '_utf8':'?',
-            'bgresponse':'js_disabled',
-            'Email':email,
-            'Passwd':passw,
-            'signIn':'Sign in',
-            'PersistentCookie':'yes'}
-    r2=reqses.post(third,data=data2)
-    fourth=r2.history[len(r2.history)-1].headers['Location'].replace('amp%3B','').replace('amp;','')
-    r3=reqses.get(fourth)
-    
-    client_id=re.search('client_id=.*&from_login',fourth)
-    client_id= re.sub('.*_id=','',client_id.group(0))
-    client_id= re.sub('&from.*','',client_id)
-    
-    state_wrapper= re.search('<input id="state_wrapper" type="hidden" name="state_wrapper" value=".*">',r3.content)
-    state_wrapper=re.sub('.*state_wrapper" value="','',state_wrapper.group(0))
-    state_wrapper=re.sub('"><input type="hidden" .*','',state_wrapper)
-    connect_approve=re.search('<form id="connect-approve" action=".*" method="POST" style="display: inline;">',r3.content)
-    connect_approve=re.sub('.*action="','',connect_approve.group(0))
-    connect_approve=re.sub('" me.*','',connect_approve)
-    data3 = OrderedDict([('bgresponse', 'js_disabled'), ('_utf8', '?'), ('state_wrapper', state_wrapper), ('submit_access', 'true')])
-    r4=reqses.post(connect_approve.replace('amp;',''),data=data3)
-    code= re.search('<input id="code" type="text" readonly="readonly" value=".*" style=".*" onclick=".*;" />',r4.content)
-    code=re.sub('.*value="','',code.group(0))
-    code=re.sub('" style.*','',code)
-    data4={'client_id':client_id,
-        'client_secret':'NCjF1TLi2CcY6t5mt0ZveuL7',
-        'code':code,
-        'grant_type':'authorization_code',
-        'redirect_uri':'urn:ietf:wg:oauth:2.0:oob',
-        'scope':'openid email https://www.googleapis.com/auth/userinfo.email'}
-    r5 = reqses.post(last,data=data4)
+    reqses.headers.update({'User-Agent': 'Niantic App'})
+    reqses.headers.update({
+                              'User-Agent': 'Mozilla/5.0 (iPad; CPU OS 8_4 like Mac OS X) AppleWebKit/600.1.4 (KHTML, like Gecko) Mobile/12H143'})
+    first = 'https://accounts.google.com/o/oauth2/auth?client_id=848232511240-73ri3t7plvk96pj4f85uj8otdat2alem.apps.googleusercontent.com&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob&response_type=code&scope=openid%20email%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email'
+    second = 'https://accounts.google.com/AccountLoginInfo'
+    third = 'https://accounts.google.com/signin/challenge/sl/password'
+    last = 'https://accounts.google.com/o/oauth2/token'
+    r = reqses.get(first)
+
+    GALX = re.search('<input type="hidden" name="GALX" value=".*">', r.content)
+    gxf = re.search('<input type="hidden" name="gxf" value=".*:.*">', r.content)
+    cont = re.search('<input type="hidden" name="continue" value=".*">', r.content)
+
+    GALX = re.sub('.*value="', '', GALX.group(0))
+    GALX = re.sub('".*', '', GALX)
+
+    gxf = re.sub('.*value="', '', gxf.group(0))
+    gxf = re.sub('".*', '', gxf)
+
+    cont = re.sub('.*value="', '', cont.group(0))
+    cont = re.sub('".*', '', cont)
+
+    data1 = {'Page': 'PasswordSeparationSignIn',
+             'GALX': GALX,
+             'gxf': gxf,
+             'continue': cont,
+             'ltmpl': 'embedded',
+             'scc': '1',
+             'sarp': '1',
+             'oauth': '1',
+             'ProfileInformation': '',
+             '_utf8': '?',
+             'bgresponse': 'js_disabled',
+             'Email': email,
+             'signIn': 'Next'}
+    r1 = reqses.post(second, data=data1)
+
+    profile = re.search('<input id="profile-information" name="ProfileInformation" type="hidden" value=".*">',
+                        r1.content)
+    gxf = re.search('<input type="hidden" name="gxf" value=".*:.*">', r1.content)
+    gxf = re.sub('.*value="', '', gxf.group(0))
+    gxf = re.sub('".*', '', gxf)
+
+    profile = re.sub('.*value="', '', profile.group(0))
+    profile = re.sub('".*', '', profile)
+    data2 = {'Page': 'PasswordSeparationSignIn',
+             'GALX': GALX,
+             'gxf': gxf,
+             'continue': cont,
+             'ltmpl': 'embedded',
+             'scc': '1',
+             'sarp': '1',
+             'oauth': '1',
+             'ProfileInformation': profile,
+             '_utf8': '?',
+             'bgresponse': 'js_disabled',
+             'Email': email,
+             'Passwd': passw,
+             'signIn': 'Sign in',
+             'PersistentCookie': 'yes'}
+    r2 = reqses.post(third, data=data2)
+    fourth = r2.history[len(r2.history) - 1].headers['Location'].replace('amp%3B', '').replace('amp;', '')
+    r3 = reqses.get(fourth)
+
+    client_id = re.search('client_id=.*&from_login', fourth)
+    client_id = re.sub('.*_id=', '', client_id.group(0))
+    client_id = re.sub('&from.*', '', client_id)
+
+    state_wrapper = re.search('<input id="state_wrapper" type="hidden" name="state_wrapper" value=".*">', r3.content)
+    state_wrapper = re.sub('.*state_wrapper" value="', '', state_wrapper.group(0))
+    state_wrapper = re.sub('"><input type="hidden" .*', '', state_wrapper)
+    connect_approve = re.search('<form id="connect-approve" action=".*" method="POST" style="display: inline;">',
+                                r3.content)
+    connect_approve = re.sub('.*action="', '', connect_approve.group(0))
+    connect_approve = re.sub('" me.*', '', connect_approve)
+    data3 = OrderedDict(
+        [('bgresponse', 'js_disabled'), ('_utf8', '?'), ('state_wrapper', state_wrapper), ('submit_access', 'true')])
+    r4 = reqses.post(connect_approve.replace('amp;', ''), data=data3)
+    code = re.search('<input id="code" type="text" readonly="readonly" value=".*" style=".*" onclick=".*;" />',
+                     r4.content)
+    code = re.sub('.*value="', '', code.group(0))
+    code = re.sub('" style.*', '', code)
+    data4 = {'client_id': client_id,
+             'client_secret': 'NCjF1TLi2CcY6t5mt0ZveuL7',
+             'code': code,
+             'grant_type': 'authorization_code',
+             'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob',
+             'scope': 'openid email https://www.googleapis.com/auth/userinfo.email'}
+    r5 = reqses.post(last, data=data4)
     return json.loads(r5.content)['id_token']
 
 
@@ -287,6 +303,7 @@ def login_ptc(username, password):
     access_token = re.sub('.*access_token=', '', access_token)
     return access_token
 
+
 def heartbeat(api_endpoint, access_token, response, login_type):
     m4 = pokemon_pb2.RequestEnvelop.Requests()
     m = pokemon_pb2.RequestEnvelop.MessageSingleInt()
@@ -297,7 +314,7 @@ def heartbeat(api_endpoint, access_token, response, login_type):
     m.bytes = "05daf51635c82611d1aac95c0b051d3ec088a930"
     m5.message = m.SerializeToString()
 
-    walk = sorted(getNeighbors())
+    walk = sorted(neighbors())
 
     m1 = pokemon_pb2.RequestEnvelop.Requests()
     m1.type = 106
@@ -322,30 +339,30 @@ def heartbeat(api_endpoint, access_token, response, login_type):
     heartbeat.ParseFromString(payload)
     return heartbeat
 
+
 def main(location=None):
-    
     pokemons = json.load(open('api/pokemon.json'))
     ptc_username = os.environ.get('PTC_USERNAME', "Invalid")
     ptc_password = os.environ.get('PTC_PASSWORD', "Invalid")
-            
+
     set_location(location)
-    
+
     login_type = "ptc"
     access_token = "fake"
-    
+
     try:
-        f = open('access_token.json','r')
+        f = open('access_token.json', 'r')
         cached_token_info = json.loads(f.read())
         f.close()
         login_type = cached_token_info['login_type']
         access_token = cached_token_info['access_token']
     except:
         pass
-    
+
     api_endpoint = get_api_endpoint(login_type, access_token)
     if api_endpoint == "https:///rpc":
         print "BAD CACHE"
-    
+
         login_type = "ptc"
         try:
             access_token = login_ptc(ptc_username, ptc_password)
@@ -354,28 +371,28 @@ def main(location=None):
         print "access_token", access_token
         if access_token is None:
             print('[-] Trouble logging in via PTC')
-            
+
             print('[+] Authentication with google...')
             goog_username = os.environ.get('GOOG_USERNAME', "Invalid")
             goog_password = os.environ.get('GOOG_PASSWORD', "Invalid")
             access_token = login_google(goog_username, goog_password)
             login_type = "google"
-            
-        f = open('access_token.json','w')
+
+        f = open('access_token.json', 'w')
         f.write(json.dumps({
             "access_token": access_token,
             "login_type": login_type
-        })) 
+        }))
         f.close()
-        
+
         print('[+] RPC Session Token: {} ...'.format(access_token[:25]))
 
         api_endpoint = get_api_endpoint(login_type, access_token)
     else:
         print "Login cache is good!"
-        
+
     print "api_endpoint", api_endpoint
-        
+
     if api_endpoint is None:
         print('[-] RPC server offline')
         return
@@ -390,7 +407,7 @@ def main(location=None):
         profile.ParseFromString(payload)
         print('[+] Username: {}'.format(profile.profile.username))
 
-        creation_time = datetime.fromtimestamp(int(profile.profile.creation_time)/1000)
+        creation_time = datetime.fromtimestamp(int(profile.profile.creation_time) / 1000)
         print('[+] You are playing Pokemon Go since: {}'.format(
             creation_time.strftime('%Y-%m-%d %H:%M:%S'),
         ))
@@ -423,7 +440,7 @@ def main(location=None):
             for cell in hh.cells:
                 for wild in cell.WildPokemon:
                     hash = wild.SpawnPointId + ':' + str(wild.pokemon.PokemonId)
-                    if (hash not in seen):
+                    if hash not in seen:
                         visible.append(wild)
                         seen.add(hash)
 
@@ -435,8 +452,10 @@ def main(location=None):
                 # print(diff)
                 difflat = diff.lat().degrees
                 difflng = diff.lng().degrees
-                direction = (('N' if difflat >= 0 else 'S') if abs(difflat) > 1e-4 else '')  + (('E' if difflng >= 0 else 'W') if abs(difflng) > 1e-4 else '')
-                print("Within one step of %s (%sm %s from you):" % (other, int(origin.get_distance(other).radians * 6366468.241830914), direction))
+                direction = (('N' if difflat >= 0 else 'S') if abs(difflat) > 1e-4 else '') + (
+                ('E' if difflng >= 0 else 'W') if abs(difflng) > 1e-4 else '')
+                print("Within one step of %s (%sm %s from you):" % (
+                other, int(origin.get_distance(other).radians * 6366468.241830914), direction))
                 for poke in cell.NearbyPokemon:
                     print('    (%s) %s' % (poke.PokedexNumber, pokemons[poke.PokedexNumber - 1]['Name']))
 
@@ -447,7 +466,8 @@ def main(location=None):
             # print(diff)
             difflat = diff.lat().degrees
             difflng = diff.lng().degrees
-            direction = (('N' if difflat >= 0 else 'S') if abs(difflat) > 1e-4 else '')  + (('E' if difflng >= 0 else 'W') if abs(difflng) > 1e-4 else '')
+            direction = (('N' if difflat >= 0 else 'S') if abs(difflat) > 1e-4 else '') + (
+            ('E' if difflng >= 0 else 'W') if abs(difflng) > 1e-4 else '')
 
             nearby_pokes.append({
                 "id": poke.pokemon.PokemonId,
@@ -459,12 +479,14 @@ def main(location=None):
                 "direction": direction
             })
 
-            print("(%s) %s is visible at (%s, %s) for %s seconds (%sm %s from you)" % (poke.pokemon.PokemonId, pokemons[poke.pokemon.PokemonId - 1]['Name'], poke.Latitude, poke.Longitude, poke.TimeTillHiddenMs / 1000, int(origin.get_distance(other).radians * 6366468.241830914), direction))
+            print("(%s) %s is visible at (%s, %s) for %s seconds (%sm %s from you)" % (
+            poke.pokemon.PokemonId, pokemons[poke.pokemon.PokemonId - 1]['Name'], poke.Latitude, poke.Longitude,
+            poke.TimeTillHiddenMs / 1000, int(origin.get_distance(other).radians * 6366468.241830914), direction))
 
         break
 
     return nearby_pokes
 
+
 if __name__ == '__main__':
     main()
-    
